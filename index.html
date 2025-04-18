@@ -1,0 +1,319 @@
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>テトリミノ敷き詰めソルバー</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #888;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+    h2 {
+      color: #bbb;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .piece-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #fff;
+      border: 0px solid #ddd;
+      padding: 10px 10px;
+      border-radius: 6px;
+      
+    }
+    .piece-preview {
+      display: grid;
+      grid-template-columns: repeat(4, 20px);
+      gap: 0px;
+    }
+    .preview-cell {
+      width: 20px;
+      height: 20px;
+      background: #ffff;
+    }
+    input[type="number"] {
+      width: 60px;
+      text-align: center;
+      font-size: 16px;
+      line-height: 1.3;
+      padding: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    .board {
+      display: grid;
+      gap: 0px;
+      background: none;
+    }
+    .cell {
+      width: 40px;
+      height: 40px;
+      border: 0px solid #444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h2>テトリミノ敷き詰めソルバー</h2>
+
+  <div class="controls">
+    <label>タテ: <input type="number" id="rows" value="4" min="1"></label>
+    <label>ヨコ: <input type="number" id="cols" value="4" min="1"></label>
+  </div>
+
+  <div class="controls" id="pieceInputs"></div>
+
+  <div class="controls">
+    <button onclick="setupAndSolve()">敷き詰めチェック</button>
+    <button onclick="resetInputs()">リセット</button>
+  </div>
+
+  <div id="message" style="margin:10px 0; color: red;"></div>
+  <div id="status" style="margin:10px 0; color: green;"></div>
+  <div id="board" class="board"></div>
+
+<script>
+
+const colors = [
+  '#FFCB69', '#E8AC65', '#D08C60', '#B58463', '#997B66',
+  '#797D62', '#9B9B7A', '#BAA587', '#D9AE94', '#F1DCA7'
+];
+
+const PREVIEWS = {
+  I: [[1, 1, 1, 1]],
+  O: [[1, 1], [1, 1]],
+  T: [[1, 1, 1], [0, 1, 0]],
+  L: [[1, 1, 1], [1, 0, 0]],
+  J: [[1, 0, 0], [1, 1, 1]],
+  S: [[0, 1, 1], [1, 1, 0]],
+  Z: [[1, 1, 0], [0, 1, 1]]
+};
+
+const PIECES = {
+  I: [[1, 1, 1, 1]],
+  O: [[1, 1], [1, 1]],
+  T: [[1, 1, 1], [0, 1, 0]],
+  L: [[1, 1, 1], [1, 0, 0]],
+  J: [[1, 0, 0], [1, 1, 1]],
+  S: [[0, 1, 1], [1, 1, 0]],
+  Z: [[1, 1, 0], [0, 1, 1]]
+};
+
+function createPieceInputs() {
+  const container = document.getElementById("pieceInputs");
+  container.innerHTML = "";
+  for (let key in PREVIEWS) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "piece-group";
+    const preview = document.createElement("div");
+    preview.className = "piece-preview";
+    const shape = PREVIEWS[key];
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        const cell = document.createElement("div");
+        cell.className = "preview-cell";
+        if (shape[row]?.[col]) cell.style.background = "#666";
+        preview.appendChild(cell);
+      }
+    }
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = 0;
+    input.value = 0;
+    input.id = "count_" + key;
+    wrapper.appendChild(preview);
+    wrapper.appendChild(document.createTextNode(key));
+    wrapper.appendChild(input);
+    container.appendChild(wrapper);
+  }
+}
+
+createPieceInputs();
+
+function resetInputs() {
+  document.getElementById("rows").value = 4;
+  document.getElementById("cols").value = 4;
+  for (let key in PIECES) {
+    document.getElementById("count_" + key).value = 0;
+  }
+  document.getElementById("message").textContent = "";
+  renderBoard([]);
+}
+
+function rotate(matrix) {
+  const rotations = [];
+  let m = matrix;
+  for (let i = 0; i < 4; i++) {
+    m = m[0].map((_, c) => m.map(row => row[c]).reverse());
+    const key = JSON.stringify(m);
+    if (!rotations.some(r => JSON.stringify(r) === key)) {
+      rotations.push(m);
+    }
+  }
+  return rotations;
+}
+
+function renderBoard(grid = []) {
+  const boardEl = document.getElementById("board");
+  boardEl.innerHTML = "";
+  boardEl.style.gridTemplateColumns = `repeat(${grid[0]?.length || 0}, 40px)`;
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (grid[r][c] != null) {
+        cell.style.background = colors[grid[r][c] % colors.length];
+      }
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+function setupAndSolve() {
+  const messageEl = document.getElementById("message");
+  messageEl.textContent = "計算中...";
+  renderBoard([]);
+
+  const ROWS = parseInt(document.getElementById("rows").value);
+  const COLS = parseInt(document.getElementById("cols").value);
+  const board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+  const selectedPieces = [];
+  for (let key in PIECES) {
+    const count = parseInt(document.getElementById("count_" + key).value);
+    for (let i = 0; i < count; i++) {
+      selectedPieces.push({
+        name: key,
+        rotations: rotate(PIECES[key])
+      });
+    }
+  }
+
+  const area = selectedPieces.reduce((a, p) => a + p.rotations[0].flat().filter(x => x).length, 0);
+  if (area !== ROWS * COLS) {
+    messageEl.textContent = "ピースの合計面積(" + area + ")と盤面サイズ(" + ROWS * COLS + ")が一致していません！";
+    return;
+  }
+
+  const worker = new Worker(URL.createObjectURL(new Blob([`
+    ${rotate.toString()}
+
+    function isSolvable(board) {
+      const ROWS = board.length;
+      const COLS = board[0].length;
+      const visited = board.map(row => row.map(() => false));
+      const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
+
+      function dfs(r, c) {
+        if (r < 0 || c < 0 || r >= ROWS || c >= COLS || visited[r][c] || board[r][c] != null) return 0;
+        visited[r][c] = true;
+        let size = 1;
+        for (const [dr, dc] of dirs) size += dfs(r + dr, c + dc);
+        return size;
+      }
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (board[r][c] == null && !visited[r][c]) {
+            const regionSize = dfs(r, c);
+            if (regionSize % 4 !== 0) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    onmessage = function(e) {
+      const { pieces, ROWS, COLS } = e.data;
+      const board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+      function canPlace(board, piece, row, col) {
+        for (let r = 0; r < piece.length; r++) {
+          for (let c = 0; c < piece[r].length; c++) {
+            if (piece[r][c]) {
+              if (row + r >= ROWS || col + c >= COLS || board[row + r][col + c] != null) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      function place(board, piece, row, col, index) {
+        for (let r = 0; r < piece.length; r++) {
+          for (let c = 0; c < piece[r].length; c++) {
+            if (piece[r][c]) {
+              board[row + r][col + c] = index;
+            }
+          }
+        }
+      }
+
+      function unplace(board, piece, row, col) {
+        for (let r = 0; r < piece.length; r++) {
+          for (let c = 0; c < piece[r].length; c++) {
+            if (piece[r][c]) {
+              board[row + r][col + c] = null;
+            }
+          }
+        }
+      }
+
+      function solve(index) {
+        if (index === pieces.length) return true;
+        const piece = pieces[index];
+        for (let rot of piece.rotations) {
+          for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+              if (canPlace(board, rot, r, c)) {
+                place(board, rot, r, c, index);
+                if (isSolvable(board) && solve(index + 1)) return true;
+                unplace(board, rot, r, c);
+              }
+            }
+          }
+        }
+        return false;
+      }
+
+      const ok = solve(0);
+      postMessage({ ok, board });
+    }
+  `], { type: 'application/javascript' })));
+
+  worker.onmessage = function(e) {
+    const { ok, board } = e.data;
+    renderBoard(board);
+    messageEl.textContent = ok ? "敷き詰め成功！" : "敷き詰められませんでした。";
+  };
+
+  worker.postMessage({ pieces: selectedPieces, ROWS, COLS });
+}
+</script>
+</body>
+</html>
